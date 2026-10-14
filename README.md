@@ -1,88 +1,55 @@
 # NHQ AutoDialer
 
-I built NHQ AutoDialer to work through a lead list, make one call at a time, and save the outcome to a local Excel tracker. Each call starts with a click. Ending a call opens the log; the app does not dial the next lead automatically.
+## Problem
 
-## Stack and choices
+Working through a lead list means moving between contact details, a calling tool, and a spreadsheet after every call. I wanted to keep that process in one desktop app so I could focus on the current lead and record the outcome before moving on.
 
-| Part | Technology | Reason |
+I also wanted control over when each call starts, with a local Do Not Call list and a way to test the workflow without a paid phone account. Contact lists, phone numbers, and calling credentials needed to stay out of the public repository.
+
+## Solution
+
+I built NHQ AutoDialer to import lead spreadsheets, show one lead at a time, and open a call log when the call ends. I start each call myself, save the result to SQLite and an Excel tracker, and choose when to load the next lead. Do Not Call checks run before dialing, and retrying a tracker save does not create another copy of the call.
+
+The app includes Mock mode for trying the full workflow and a Telnyx WebRTC integration for real calls. The public version includes fictional sample contacts and generates a blank tracker. Credentials and caller ID are entered locally and encrypted on disk; real leads, call history, and private workbooks are not bundled with the source.
+
+![NHQ AutoDialer setup screen with fictional sample leads and no private contact details](docs/screenshots/setup.png)
+
+## Stack and Explanation
+
+| Part of the source | Stack | What it does and why |
 | --- | --- | --- |
-| Desktop | Electron 44 | Provides a Windows app with file dialogs, local storage, and microphone access. |
-| Interface | React 18, TypeScript, HTML, CSS | Keeps the dialer, queue, settings, and post-call form as separate components with shared types. |
-| Build | electron-vite, Vite, electron-builder | Builds the main process, preload bridge, and renderer, then packages Windows releases. |
-| Data | SQLite through sql.js/WebAssembly | Stores leads, calls, settings, and Do Not Call entries without a native database compiler. |
-| Spreadsheets | ExcelJS | Reads leads and appends call logs while keeping workbook sheets and formatting. |
-| Lead archives | adm-zip | Reads spreadsheets inside ZIP archives without extracting customer files into the source. |
-| Phone handling | libphonenumber-js | Normalizes numbers to E.164 for deduplication and Do Not Call checks. |
-| Real calls | Telnyx WebRTC SDK | Uses a SIP connection for browser-based audio without a separate token server. |
-| Private settings | Electron safeStorage | Encrypts SIP credentials and caller ID with the operating system before saving them. |
-| Tests | Node assert, esbuild, Electron | Exercises storage, import, tracker writes, calling checks, and provider events. |
+| `src/main/index.ts` | Electron 44, TypeScript | Creates the desktop window, manages startup and permissions, and handles single-instance behavior. Electron provides file and microphone access around the web interface. |
+| `src/renderer/src/` | React 18, TypeScript/TSX, HTML, CSS | Separates the dialer, import, queue, settings, and logging screens. Shared call state keeps the selected lead and call log together. |
+| `src/preload/`, `src/shared/` | Electron contextBridge/IPC, TypeScript | Exposes a typed API between React and the main process without giving the renderer direct Node access. IPC requests are restricted to the main window. |
+| `src/main/db.ts`, `store.ts` | SQLite, sql.js/WebAssembly, SQL | Stores leads, calls, settings, and Do Not Call entries locally. WebAssembly avoids a native database compiler in the Windows build. |
+| `src/main/services/importer.ts` | adm-zip, ExcelJS | Reads lead workbooks from archives, deduplicates valid numbers, and rolls back failed batches. Size and row limits bound imports. |
+| Phone and location services | libphonenumber-js, TypeScript | Normalizes numbers to E.164 and estimates calling hours from state/province timezones. Normalization makes duplicate and Do Not Call checks consistent. |
+| `src/main/services/excel.ts` | ExcelJS, Node filesystem APIs | Preserves tracker sheets and formatting, backs up writes, and uses submission IDs to avoid duplicate exports. |
+| `services/callingProvider/` | Mock adapter, Telnyx WebRTC SDK | Keeps call control separate from the screens. Telnyx uses a SIP connection without a separate hosted token server; Mock mode needs no account. |
+| Private settings | Electron safeStorage | Uses operating-system encryption for SIP credentials and caller ID before saving them. Values are only decrypted locally when needed. |
+| Build scripts and tests | electron-vite, Vite, electron-builder, esbuild, Node assert | Builds main/preload/renderer code, generates the blank tracker, packages Windows executables, and runs isolated integration checks. |
 
-TypeScript is used in the app, TSX in the React screens, CSS for styling, SQL for storage, and small JavaScript scripts for builds and tests. The calling provider is separate from the UI so Mock mode and Telnyx use the same call flow.
+The app uses TypeScript for logic, TSX for React components, CSS for styling, SQL for queries, and small JavaScript build scripts. There is no hosted REST backend. React calls the preload API in `src/shared/api.ts`; the main process handles imports, storage, settings, file dialogs, and tracker writes. Telnyx handles external signaling and voice media, with received audio connected to the renderer's audio element.
 
-## Run locally
-
-Use Node.js 22.12 or newer; Node 24 is the tested environment.
+Use Node.js 22.12 or newer; Node 24 is the tested environment:
 
 ```powershell
 npm ci
 npm run dev
 ```
 
-Start with **Mock** mode. In **Setup / Import**, choose **Load sample leads**, then open the dialer. These fictional contacts use reserved example numbers and cannot be called through Telnyx. The app creates a blank tracker; no customer workbook is bundled.
+Start in **Mock** mode and choose **Load sample leads** on the setup screen. Those fictional numbers are blocked from Telnyx calling. Your own lead archives can contain `.xlsx` workbooks with Business, Owner, Phone, Website, Location, and Revenue headers. Invalid numbers remain visible for review but cannot be dialed.
 
-For your own leads, select ZIP archives containing `.xlsx` workbooks. Use headers such as Business, Owner, Phone, Website, Location, and Revenue. Industry and country are inferred from the workbook filename. Numbers are normalized and duplicate valid numbers are skipped. Invalid numbers remain visible for review but cannot be dialed.
+For live calls, configure a Telnyx credential-based SIP connection, an outbound voice profile, and an authorized caller ID. Enter the SIP username, password, and caller ID in Settings, then save and connect. Windows must allow desktop microphone access. This version uses SIP credentials rather than a Telnyx REST API key; no live credentials are stored in source files.
 
-## Calling and logging
-
-1. Select a lead and click **Call**.
-2. Use **Mute** or **Hang Up** during the call.
-3. Fill in the post-call outcome and notes.
-4. Save the log to SQLite and the Excel tracker.
-5. Click **Next Call** when ready.
-
-Call-log retries reuse the same submission ID to avoid duplicate records and tracker rows. If Excel has locked the workbook, close it and retry the save. A tracker backup is created before each write. An unsupported workbook layout is refused instead of being overwritten.
-
-Do Not Call checks run before dialing. Formatted versions of the same number use the same normalized entry. Removing an entry explicitly makes the affected leads available again. Optional calling hours use a state/province timezone estimate; some regions have more than one timezone, so this is not an exact location lookup.
-
-## APIs and private configuration
-
-This app has no hosted REST server. React calls the main process through the typed preload API in `src/shared/api.ts`. The main process handles lead import, queue filters, settings, Do Not Call, call logs, file dialogs, and tracker operations. Electron IPC requests are restricted to the app's main window.
-
-**Telnyx is the only external calling integration.** For live calls, use a Telnyx credential-based SIP connection with an outbound voice profile and an authorized caller ID. Enter the SIP username, password, and caller ID in **Settings**, then save and connect. Allow desktop microphone access in Windows settings. A Telnyx account and calling credit are required.
-
-No Telnyx REST API key is required by this version. The SDK handles WebRTC signaling and media. Credentials and caller IDs are entered at runtime, encrypted on disk, and held in memory while connecting. Raw provider errors and credentials are not logged by the app. The source contains the integration and configuration field names, with no personal numbers, lead archives, call history, or live credentials.
-
-Provider setup references: [Telnyx WebRTC guide](https://developers.telnyx.com/development/webrtc/js-sdk/quickstart/index), [Electron safeStorage](https://www.electronjs.org/docs/latest/api/safe-storage).
-
-## Project layout
-
-```text
-src/main/                 Desktop startup, SQLite, settings, IPC handlers
-src/main/services/        Lead import, phone/location handling, Excel tracker
-src/preload/              Typed bridge between React and Electron
-src/renderer/src/         Screens, styling, shared call state
-src/renderer/src/services/callingProvider/
-                          Mock and Telnyx adapters
-src/shared/               API contract and shared data types
-scripts/                  Blank tracker generator and test runner
-tests/                    Isolated integration tests with fictional records
-```
-
-## Data, tests, and Windows build
-
-User data stays in Electron's `userData` folder, shown in Settings. On Windows this normally lives under `%APPDATA%`. It contains the SQLite database, working tracker, and tracker backups. Keep this folder private. Close the app before backing it up. `NHQ_AUTODIALER_DATA_DIR` selects a separate workspace for testing or demos.
+User data stays in Electron's `userData` folder, shown in Settings and normally under `%APPDATA%` on Windows. It contains the SQLite database, working tracker, and backups. Close the app before backing it up. `NHQ_AUTODIALER_DATA_DIR` selects an isolated workspace. If Excel locks the tracker, close the workbook and retry the save.
 
 ```powershell
 npm run typecheck
 npm test
 npm run build
-npm run build:unpack
 npm run build:win
 npm audit
 ```
 
-Windows builds go to `release/`. The repository contains the source, not generated installers. The blank tracker is generated from `scripts/create-tracker.cjs` during install/build. Lead files, workbooks, databases, environment files, credentials, dependencies, and generated builds are excluded from Git.
-
-The 14 integration checks pass. The packaged Windows executable was also tested through launch, a Mock call and hangup, a failed tracker save and retry, one saved/exported record, Do Not Call, restart persistence, and shutdown. Type checks, production builds, and dependency audits pass. Both full and production dependency audits report zero known vulnerabilities at verification time.
-
-Live Telnyx calls and microphone/audio quality require private credentials and have not been verified with a paid account. Windows packages are unsigned; macOS and Linux packages have not been verified.
+The 14 integration checks pass, and the packaged Windows app was exercised through a Mock call, logging, tracker failure/retry, Do Not Call, restart persistence, and shutdown. `release/` holds generated installer and portable builds; they are excluded from Git. Live Telnyx calls and audio quality have not been verified with a paid account. Windows packages are unsigned, and macOS/Linux packages are unverified. Calling hours are a regional estimate, not an exact location lookup.
