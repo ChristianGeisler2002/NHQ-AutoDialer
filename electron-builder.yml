@@ -1,0 +1,42 @@
+appId: com.nfinityhq.autodialer
+productName: NHQ AutoDialer
+copyright: Copyright © 2026 NfinityHQ
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/**/*
+  - package.json
+
+# Bundled, read-only files placed next to the app (outside the asar archive).
+extraResources:
+  - from: resources/tracker_template.xlsx
+    to: tracker_template.xlsx
+  - from: node_modules/sql.js/dist/sql-wasm.wasm
+    to: sql-wasm.wasm
+
+asarUnpack:
+  - "**/*.wasm"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: NHQ AutoDialer
+
+portable:
+  artifactName: ${productName}-${version}-Portable.exe

@@ -1,0 +1,51 @@
+{
+  "name": "nhq-autodialer",
+  "version": "1.1.0",
+  "description": "NfinityHQ manual click-to-call power dialer (desktop)",
+  "author": "NfinityHQ",
+  "license": "UNLICENSED",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "node scripts/create-tracker.cjs && electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "build:win": "npm run typecheck && npm run build && electron-builder --win --publish never",
+    "build:unpack": "npm run typecheck && npm run build && electron-builder --win --dir --publish never",
+    "prepare": "node scripts/create-tracker.cjs",
+    "test": "node scripts/run-tests.cjs"
+  },
+  "dependencies": {
+    "adm-zip": "^0.6.1",
+    "exceljs": "^4.4.0",
+    "libphonenumber-js": "^1.11.20",
+    "sql.js": "^1.12.0"
+  },
+  "devDependencies": {
+    "@telnyx/webrtc": "^2.27.10",
+    "@types/adm-zip": "^0.5.5",
+    "@types/node": "^20.16.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/sql.js": "^1.4.9",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^44.7.2",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^6.0.0",
+    "esbuild": "^0.28.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.6.3",
+    "vite": "^8.3.4"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "overrides": {
+    "uuid": "11.1.1",
+    "brace-expansion@^2.0.0": "^2.1.7",
+    "global-agent": "^4.1.3"
+  }
+}
